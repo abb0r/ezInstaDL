@@ -5,6 +5,13 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-09-06
+
+### Fixed
+
+- Opening a post from a profile left the grid controls in place. They were `position: fixed` over the modal, which looked like a field of buttons on the photo. A dialog or `/p/` permalink now shows a single control on the focused media and hides the grid overlays.
+- Carousel detection on permalinks looks at the dialog/article around the image, not only inside the `img` node.
+
 ## [0.1.3] — 2026-09-06
 
 ### Fixed

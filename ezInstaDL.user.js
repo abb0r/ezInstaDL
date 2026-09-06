@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.3
+// @version      0.1.4
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.3";
+  const VERSION = "0.1.4";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -441,7 +441,7 @@
   function isAvatar(img) {
     const w = img.clientWidth || img.naturalWidth || 0;
     const h = img.clientHeight || img.naturalHeight || 0;
-    if (w && h && w <= 110 && h <= 110) return true;
+    if (w && h && w <= 140 && h <= 140) return true;
     const alt = (img.getAttribute("alt") || "").toLowerCase();
     if (alt.includes("profile picture")) return true;
     return false;
@@ -536,21 +536,30 @@
     return root;
   }
 
+  function hintRoot(root) {
+    return (
+      (root.closest && (root.closest('div[role="dialog"]') || root.closest("article") || root.closest("section"))) ||
+      root
+    );
+  }
+
   function carouselHint(root) {
-    const next = root.querySelector('[aria-label="Next"], [aria-label="Weiter"]');
-    const prev = root.querySelector('[aria-label="Go back"], [aria-label="Back"], [aria-label="Zurück"]');
+    const box = hintRoot(root);
+    const next = box.querySelector('[aria-label="Next"], [aria-label="Weiter"]');
+    const prev = box.querySelector('[aria-label="Go back"], [aria-label="Back"], [aria-label="Zurück"]');
     return Boolean(next || prev);
   }
 
   function currentIndex(root, total) {
     if (!total || total < 2) return 0;
-    const labeled = root.querySelector("[aria-label*=' of '], [aria-label*=' von ']");
+    const box = hintRoot(root);
+    const labeled = box.querySelector("[aria-label*=' of '], [aria-label*=' von ']");
     if (labeled) {
       const t = labeled.getAttribute("aria-label") || labeled.textContent || "";
       const m = t.match(/(\d+)\s*(of|von)\s*(\d+)/i);
       if (m) return Math.max(0, Math.min(total - 1, Number(m[1]) - 1));
     }
-    const buttons = Array.from(root.querySelectorAll("button, div[role='button']"));
+    const buttons = Array.from(box.querySelectorAll("button, div[role='button']"));
     for (let i = 0; i < buttons.length; i++) {
       const label = buttons[i].getAttribute("aria-label") || "";
       const m = label.match(/(\d+)\s*(of|von)\s*(\d+)/i);
@@ -824,18 +833,27 @@
     });
   }
 
+  function viewerDialog() {
+    return document.querySelector('div[role="dialog"]');
+  }
+
+  function focusedMedia() {
+    const dialog = viewerDialog();
+    const root = dialog || document.querySelector("main") || document.body;
+    return currentDomMedia(root) || (root !== document.body ? currentDomMedia(document.body) : null);
+  }
+
   function scan() {
     const scopes = [];
+    const dialog = viewerDialog();
+    const focused = dialog || isPostPath() || isReelPath();
+
     if (isStoryPath()) {
       const frame = storyFrame();
       if (frame) scopes.push(frame);
-    } else if (isReelPath()) {
-      const frame = reelFrame();
-      if (frame) scopes.push(frame);
-    } else if (isPostPath()) {
-      const frame = postFrame();
-      if (frame) scopes.push(frame);
-      gridCells().forEach((a) => scopes.push(a));
+    } else if (focused) {
+      const hit = focusedMedia();
+      if (hit && hit.el) scopes.push(hit.el);
     } else {
       articleRoots().forEach((a) => scopes.push(a));
       gridCells().forEach((a) => scopes.push(a));
