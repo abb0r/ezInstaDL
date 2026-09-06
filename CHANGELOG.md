@@ -5,6 +5,17 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-09-06
+
+### Fixed
+
+- Controls were covered by Instagram's invisible tap layer, so the icon showed but clicks never reached it. Buttons now sit in a top-level overlay with capture-phase handlers.
+- uBlock Origin (Annoyances / social lists) hid the controls when attributes contained the word "Download". Labels are now "Save visible" / "Save set", and the UI lives in a closed shadow root so cosmetic filters cannot target the inner buttons.
+
+### Changed
+
+- Overlay is pinned to the lower-right of the visible media and follows scroll.
+
 ## [0.1.0] — 2026-09-06
 
 ### Added

@@ -1,20 +1,21 @@
 # ezInstaDL
 
-Discreet download buttons for Instagram photos, videos, carousels, Reels, and Stories.
+Discreet save buttons for Instagram photos, videos, carousels, Reels, and Stories.
 
 A userscript for [Violentmonkey](https://violentmonkey.github.io/), Tampermonkey, and other managers that speak the same header format.
 
-**Current version:** v0.1.0
+**Current version:** v0.1.1
 
 Repository: [github.com/abb0r/ezInstaDL](https://github.com/abb0r/ezInstaDL)
 
 ## What it does
 
-- Places a small download control under each post image or video.
+- Places a small control on each post image or video.
 - Single photo or video → one button.
 - Carousel → two buttons: current slide, and the whole set.
-- Reels and Stories get the same control as an overlay on the media.
+- Reels and Stories get the same control on the media.
 - Prefers the full-size URL Instagram already loaded for your session.
+- Built to stay visible with uBlock Origin enabled.
 
 ## Install
 
@@ -27,7 +28,7 @@ Updates use the `@updateURL` in the script header, pointing at the `main` branch
 
 ## Use
 
-Open the Instagram feed, a post, a Reel, or a Story. The control sits under the media (or on Reels/Stories near the lower right). Click the single arrow to save the visible item. On carousels, the stacked icon saves every slide.
+Open the Instagram feed, a post, a Reel, or a Story. The control sits on the lower-right of the media. Click the single arrow to save the visible item. On carousels, the stacked icon saves every slide.
 
 Filenames look like `username_shortcode.jpg` or `username_shortcode_02.mp4`.
 
@@ -39,7 +40,7 @@ Live video and some ads are out of scope in v0.1.x.
 
 ## Privacy
 
-The script runs entirely in your browser. It does not send media or account data to a third-party server. Downloads go through the userscript manager (`GM_download` / `GM_xmlhttpRequest`).
+The script runs entirely in your browser. It does not send media or account data to a third-party server. Saves go through the userscript manager (`GM_download` / `GM_xmlhttpRequest`).
 
 ## License
 

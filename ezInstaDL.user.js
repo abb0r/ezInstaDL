@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.0
-// @description  Discreet download buttons for Instagram photos, videos, carousels, reels, and stories.
+// @version      0.1.1
+// @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
 // @supportURL   https://github.com/abb0r/ezInstaDL/issues
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.0";
+  const VERSION = "0.1.1";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -185,16 +185,35 @@
       };
     }
 
+    try {
+      const uw = typeof unsafeWindow !== "undefined" ? unsafeWindow : null;
+      if (uw && uw.fetch && uw.fetch !== window.fetch) {
+        const raw = uw.fetch;
+        uw.fetch = function () {
+          const p = raw.apply(this, arguments);
+          try {
+            p.then((res) => {
+              try {
+                res.clone().text().then(ingestPayload).catch(() => {});
+              } catch {
+                /* ignore */
+              }
+            }).catch(() => {});
+          } catch {
+            /* ignore */
+          }
+          return p;
+        };
+      }
+    } catch {
+      /* isolated world */
+    }
+
     const RawXHR = window.XMLHttpRequest;
     if (RawXHR && RawXHR.prototype) {
       const rawOpen = RawXHR.prototype.open;
       const rawSend = RawXHR.prototype.send;
       RawXHR.prototype.open = function () {
-        try {
-          this.__ezidl = true;
-        } catch {
-          /* ignore */
-        }
         return rawOpen.apply(this, arguments);
       };
       RawXHR.prototype.send = function () {
@@ -228,80 +247,52 @@
 
   hookNetwork();
 
-  const STYLE = `
-    .${NS}-bar {
+  const SHADOW_CSS = `
+    :host {
+      position: fixed;
+      z-index: 2147483646;
+      pointer-events: none;
+    }
+    .bar {
       display: flex;
       align-items: center;
       justify-content: flex-end;
       gap: 6px;
-      padding: 6px 4px 2px;
-      pointer-events: none;
-    }
-    .${NS}-bar button {
       pointer-events: auto;
+    }
+    button {
       appearance: none;
       border: 0;
       margin: 0;
-      width: 30px;
-      height: 30px;
+      width: 32px;
+      height: 32px;
       border-radius: 999px;
-      background: rgba(12, 12, 14, 0.72);
+      background: rgba(12, 12, 14, 0.88);
       color: #f3f3f4;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
-      transition: background 150ms ease, transform 150ms ease, opacity 150ms ease;
-      opacity: 0.82;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.16);
+      pointer-events: auto;
     }
-    .${NS}-bar button:hover {
-      background: rgba(20, 20, 24, 0.92);
-      opacity: 1;
-    }
-    .${NS}-bar button:active { transform: scale(0.96); }
-    .${NS}-bar button[disabled] { opacity: 0.45; cursor: default; }
-    .${NS}-bar button svg { width: 15px; height: 15px; display: block; }
-    .${NS}-toast {
-      position: fixed;
-      right: 16px;
-      bottom: 16px;
-      z-index: 2147483646;
-      background: rgba(14,14,16,0.92);
-      color: #f4f4f5;
-      font: 500 12px/1.4 system-ui, -apple-system, sans-serif;
-      padding: 10px 12px;
-      border-radius: 10px;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.1);
-      max-width: 240px;
-      pointer-events: none;
-    }
-    .${NS}-story-wrap {
-      position: absolute;
-      right: 12px;
-      bottom: 84px;
-      z-index: 2147483000;
-    }
-    .${NS}-story-wrap .${NS}-bar { padding: 0; }
+    button:hover { background: rgba(24, 24, 28, 0.96); }
+    button:active { transform: scale(0.96); }
+    button[disabled] { opacity: 0.45; cursor: default; }
+    button svg { width: 15px; height: 15px; display: block; pointer-events: none; }
   `;
 
   const ICON_ONE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7.5 11.5 12 16l4.5-4.5"/><path d="M5 19h14"/></svg>`;
   const ICON_ALL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="12" height="12" rx="1.5"/><path d="M5 15V6.5A1.5 1.5 0 0 1 6.5 5H15"/><path d="M11 11v6"/><path d="M8.5 14.5 11 17l2.5-2.5"/></svg>`;
-
-  function injectStyle() {
-    if (document.getElementById(`${NS}-style`)) return;
-    const el = document.createElement("style");
-    el.id = `${NS}-style`;
-    el.textContent = STYLE;
-    (document.head || document.documentElement).appendChild(el);
-  }
 
   function toast(msg) {
     let n = document.getElementById(`${NS}-toast`);
     if (!n) {
       n = document.createElement("div");
       n.id = `${NS}-toast`;
-      n.className = `${NS}-toast`;
+      n.setAttribute("data-ezidl", "toast");
+      n.style.cssText =
+        "position:fixed;right:16px;bottom:16px;z-index:2147483647;background:rgba(14,14,16,.92);color:#f4f4f5;font:500 12px/1.4 system-ui,sans-serif;padding:10px 12px;border-radius:10px;box-shadow:0 0 0 1px rgba(255,255,255,.1);max-width:240px;pointer-events:none;";
       document.documentElement.appendChild(n);
     }
     n.textContent = msg;
@@ -351,7 +342,7 @@
           saveAs: false,
           headers: { Referer: "https://www.instagram.com/" },
           onload: () => resolve(),
-          onerror: (e) => reject(e || new Error("download failed")),
+          onerror: (e) => reject(e || new Error("save failed")),
           ontimeout: () => reject(new Error("timeout")),
         });
       } catch (err) {
@@ -475,20 +466,25 @@
     if (videos.length) {
       const v = videos[0];
       const url = v.currentSrc || v.src || (v.querySelector("source") && v.querySelector("source").src) || "";
-      if (url) return { url, type: "video" };
+      if (url) return { url, type: "video", el: v };
     }
     const imgs = Array.from(root.querySelectorAll("img")).filter((img) => isMediaImg(img) && visibleBox(img));
     if (!imgs.length) return null;
     imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
     const img = imgs[0];
-    return { url: img.currentSrc || img.src, type: "image" };
+    return { url: img.currentSrc || img.src, type: "image", el: img };
+  }
+
+  function mediaAnchor(root) {
+    const hit = currentDomMedia(root);
+    if (hit && hit.el) return hit.el;
+    return root;
   }
 
   function carouselHint(root) {
     const next = root.querySelector('[aria-label="Next"], [aria-label="Weiter"]');
     const prev = root.querySelector('[aria-label="Go back"], [aria-label="Back"], [aria-label="Zurück"]');
-    const dots = root.querySelectorAll('div[class] > div[style*="transform"], button[aria-label*="slide" i]');
-    return Boolean(next || prev || (dots && dots.length > 2));
+    return Boolean(next || prev);
   }
 
   function currentIndex(root, total) {
@@ -528,28 +524,23 @@
     }
     const one = currentDomMedia(root);
     if (!one) return null;
-    return { items: [one], username, shortcode, id: shortcode };
+    return { items: [{ url: one.url, type: one.type }], username, shortcode, id: shortcode };
   }
 
   function stop(ev) {
     ev.preventDefault();
     ev.stopPropagation();
-    ev.stopImmediatePropagation();
+    if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
   }
 
-  function makeButton(title, svg, onClick) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.title = title;
-    b.setAttribute("aria-label", title);
-    b.innerHTML = svg;
-    b.addEventListener("click", (ev) => {
+  function bindAction(el, fn) {
+    const run = (ev) => {
       stop(ev);
-      onClick(b);
+      fn(el);
+    };
+    ["pointerdown", "mousedown", "click", "touchstart"].forEach((type) => {
+      el.addEventListener(type, run, true);
     });
-    b.addEventListener("mousedown", stop);
-    b.addEventListener("pointerdown", stop);
-    return b;
   }
 
   async function downloadItems(list, meta, startLabel) {
@@ -560,8 +551,8 @@
       try {
         await downloadUrl(item.url, name);
       } catch (err) {
-        console.warn(LOG, "download failed", err);
-        toast("Download failed");
+        console.warn(LOG, "save failed", err);
+        toast("Save failed");
         return;
       }
       if (i < list.length - 1) await new Promise((r) => setTimeout(r, 280));
@@ -569,75 +560,106 @@
     toast(list.length > 1 ? `Saved ${list.length} files` : "Saved");
   }
 
-  function findMediaMount(root) {
-    const video = Array.from(root.querySelectorAll("video")).find(visibleBox);
-    if (video) {
-      return video.closest("div") || video.parentElement;
-    }
-    const img = Array.from(root.querySelectorAll("img")).find((n) => isMediaImg(n) && visibleBox(n));
-    if (img) return img.closest("div") || img.parentElement;
-    return null;
+  /** @type {Map<Element, { host: HTMLElement, scope: Element, shadow: ShadowRoot }>} */
+  const overlays = new Map();
+
+  function ensureOverlay(scope) {
+    let rec = overlays.get(scope);
+    if (rec && rec.host.isConnected) return rec;
+
+    const host = document.createElement("div");
+    host.setAttribute("data-ezidl", "1");
+    host.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;";
+    const shadow = host.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = SHADOW_CSS;
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    shadow.appendChild(style);
+    shadow.appendChild(bar);
+    document.documentElement.appendChild(host);
+
+    rec = { host, scope, shadow };
+    overlays.set(scope, rec);
+    renderButtons(rec);
+    return rec;
   }
 
-  function attachBar(root, opts) {
-    if (!root || root.querySelector(`:scope > .${NS}-bar, :scope .${NS}-bar`)) {
-      const existing = root.querySelector(`.${NS}-bar`);
-      if (existing && existing.isConnected) return;
-    }
-    const resolved = resolveItems(opts.scope || root);
-    if (!resolved || !resolved.items.length) return;
+  function renderButtons(rec) {
+    const bar = rec.shadow.querySelector(".bar");
+    if (!bar) return;
+    bar.textContent = "";
+    const resolved = resolveItems(rec.scope);
+    const isCarousel = (resolved && resolved.items.length > 1) || carouselHint(rec.scope);
 
-    const isCarousel = resolved.items.length > 1 || carouselHint(opts.scope || root);
-    const bar = document.createElement("div");
-    bar.className = `${NS}-bar`;
-    bar.dataset.ezidl = "1";
-
-    const oneBtn = makeButton("Download current media", ICON_ONE, async (btn) => {
+    const one = document.createElement("button");
+    one.type = "button";
+    one.setAttribute("aria-label", "Save visible");
+    one.innerHTML = ICON_ONE;
+    bindAction(one, async (btn) => {
       btn.disabled = true;
-      const fresh = resolveItems(opts.scope || root) || resolved;
-      const idx = currentIndex(opts.scope || root, fresh.items.length);
-      const item = fresh.items[idx] || currentDomMedia(opts.scope || root) || fresh.items[0];
+      const fresh = resolveItems(rec.scope) || resolved;
+      if (!fresh) {
+        btn.disabled = false;
+        return;
+      }
+      const idx = currentIndex(rec.scope, fresh.items.length);
+      const item = fresh.items[idx] || currentDomMedia(rec.scope) || fresh.items[0];
       try {
-        await downloadItems([item], { ...fresh, totalHint: fresh.items.length }, "Downloading…");
+        await downloadItems(
+          [{ url: item.url, type: item.type }],
+          { ...fresh, totalHint: fresh.items.length },
+          "Saving…",
+        );
       } finally {
         btn.disabled = false;
       }
     });
-    bar.appendChild(oneBtn);
+    bar.appendChild(one);
 
     if (isCarousel) {
-      const allBtn = makeButton("Download entire carousel", ICON_ALL, async (btn) => {
+      const all = document.createElement("button");
+      all.type = "button";
+      all.setAttribute("aria-label", "Save set");
+      all.innerHTML = ICON_ALL;
+      bindAction(all, async (btn) => {
         btn.disabled = true;
-        const fresh = resolveItems(opts.scope || root) || resolved;
-        if (fresh.items.length < 2) {
-          const one = currentDomMedia(opts.scope || root);
-          if (one) await downloadItems([one], fresh, "Downloading…");
-          btn.disabled = false;
-          return;
-        }
+        const fresh = resolveItems(rec.scope) || resolved;
         try {
-          await downloadItems(fresh.items, fresh, `Downloading ${fresh.items.length}…`);
+          if (!fresh || fresh.items.length < 2) {
+            const oneItem = currentDomMedia(rec.scope);
+            if (oneItem) await downloadItems([oneItem], fresh || { username: "instagram", shortcode: "media" }, "Saving…");
+            return;
+          }
+          await downloadItems(fresh.items, fresh, `Saving ${fresh.items.length}…`);
         } finally {
           btn.disabled = false;
         }
       });
-      bar.appendChild(allBtn);
+      bar.appendChild(all);
     }
+  }
 
-    if (opts.mode === "overlay") {
-      const wrap = document.createElement("div");
-      wrap.className = `${NS}-story-wrap`;
-      wrap.appendChild(bar);
-      const host = opts.mount || root;
-      const style = window.getComputedStyle(host);
-      if (style.position === "static") host.style.position = "relative";
-      host.appendChild(wrap);
+  function placeOverlay(rec) {
+    if (!rec.scope.isConnected) {
+      rec.host.remove();
+      overlays.delete(rec.scope);
       return;
     }
+    const anchor = mediaAnchor(rec.scope);
+    const r = anchor.getBoundingClientRect();
+    if (r.width < 80 || r.height < 80 || r.bottom < 40 || r.top > window.innerHeight) {
+      rec.host.style.display = "none";
+      return;
+    }
+    rec.host.style.display = "block";
+    const width = rec.shadow.querySelector(".bar")?.getBoundingClientRect().width || 40;
+    rec.host.style.left = `${Math.round(r.right - width - 8)}px`;
+    rec.host.style.top = `${Math.round(r.bottom - 40)}px`;
+  }
 
-    const mount = opts.mount || findMediaMount(opts.scope || root);
-    if (!mount || !mount.parentElement) return;
-    mount.insertAdjacentElement("afterend", bar);
+  function repositionAll() {
+    overlays.forEach((rec) => placeOverlay(rec));
   }
 
   function articleRoots() {
@@ -681,29 +703,34 @@
   }
 
   function scan() {
-    injectStyle();
+    const scopes = [];
     if (isStoryPath()) {
       const frame = storyFrame();
-      if (frame && !frame.querySelector(`.${NS}-bar`)) {
-        attachBar(frame, { mode: "overlay", scope: frame, mount: frame });
-      }
-      return;
-    }
-
-    if (isReelPath()) {
+      if (frame) scopes.push(frame);
+    } else if (isReelPath()) {
       const frame = reelFrame();
-      if (frame && !frame.querySelector(`.${NS}-bar`)) {
-        attachBar(frame, { mode: "overlay", scope: frame, mount: frame });
-      }
+      if (frame) scopes.push(frame);
+      articleRoots().forEach((a) => scopes.push(a));
+    } else {
+      articleRoots().forEach((a) => scopes.push(a));
     }
 
-    const articles = articleRoots();
-    for (let i = 0; i < articles.length; i++) {
-      const article = articles[i];
-      if (article.querySelector(`.${NS}-bar`)) continue;
-      if (!currentDomMedia(article) && !lookupRecord(article)) continue;
-      attachBar(article, { mode: "below", scope: article });
+    const live = new Set();
+    for (let i = 0; i < scopes.length; i++) {
+      const scope = scopes[i];
+      if (!currentDomMedia(scope) && !lookupRecord(scope)) continue;
+      live.add(scope);
+      const rec = ensureOverlay(scope);
+      renderButtons(rec);
+      placeOverlay(rec);
     }
+
+    overlays.forEach((rec, scope) => {
+      if (!live.has(scope)) {
+        rec.host.remove();
+        overlays.delete(scope);
+      }
+    });
   }
 
   function ready(fn) {
@@ -715,19 +742,22 @@
   }
 
   ready(() => {
-    injectStyle();
     scanEmbeddedJson();
     scan();
     const obs = new MutationObserver(() => scheduleScan());
     obs.observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener("scroll", repositionAll, true);
+    window.addEventListener("resize", repositionAll);
     let lastPath = location.pathname;
     setInterval(() => {
       if (location.pathname !== lastPath) {
         lastPath = location.pathname;
         scanEmbeddedJson();
         scan();
+      } else {
+        repositionAll();
       }
-    }, 600);
+    }, 500);
     console.info(LOG, "ready", VERSION);
   });
 })();
