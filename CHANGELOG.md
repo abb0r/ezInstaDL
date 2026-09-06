@@ -5,6 +5,13 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-09-06
+
+### Fixed
+
+- Standalone `/p/{shortcode}/` pages often have a leftover small `role="dialog"` in the DOM. The script treated that as the viewer and never looked at the real photo. Dialogs are now ignored unless they are large and on screen.
+- Permalink media is chosen as the largest on-screen `img`/`video` (left column preferred). If nothing matches, a fallback control is still pinned to the page so the button cannot disappear.
+
 ## [0.1.4] — 2026-09-06
 
 ### Fixed

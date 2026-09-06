@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.4
+// @version      0.1.5
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.4";
+  const VERSION = "0.1.5";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -473,7 +473,8 @@
     const r = el.getBoundingClientRect();
     if (r.width < 80 || r.height < 80) return false;
     const style = window.getComputedStyle(el);
-    if (style.visibility === "hidden" || style.display === "none" || Number(style.opacity) === 0) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (Number(style.opacity) === 0) return false;
     return true;
   }
 
@@ -508,7 +509,38 @@
     return out;
   }
 
+  function mediaFromEl(el) {
+    if (!el) return null;
+    if (el.tagName === "VIDEO") {
+      const url = el.currentSrc || el.src || (el.querySelector("source") && el.querySelector("source").src) || "";
+      return { url, type: "video", el };
+    }
+    return { url: imgUrl(el), type: "image", el };
+  }
+
+  function biggestOnScreenMedia(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const nodes = scope.querySelectorAll("img, video");
+    let best = null;
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      if (el.tagName === "IMG" && isAvatar(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 180 || r.height < 180) continue;
+      if (r.bottom < 80 || r.top > window.innerHeight - 40) continue;
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const centerX = r.left + r.width / 2;
+      const bias = centerX < window.innerWidth * 0.66 ? 1.35 : 0.8;
+      const score = r.width * r.height * bias;
+      if (!best || score > best.score) best = { el, score };
+    }
+    return best ? mediaFromEl(best.el) : null;
+  }
+
   function currentDomMedia(root) {
+    const tight = biggestOnScreenMedia(root);
+    if (tight) return tight;
     const all = collectMedia(root);
     if (!all.length) {
       const tile = root && root.tagName === "IMG" ? root : root && root.querySelector && root.querySelector("img");
@@ -834,13 +866,29 @@
   }
 
   function viewerDialog() {
-    return document.querySelector('div[role="dialog"]');
+    const list = document.querySelectorAll('div[role="dialog"]');
+    let best = null;
+    for (let i = 0; i < list.length; i++) {
+      const d = list[i];
+      const r = d.getBoundingClientRect();
+      if (r.width < 280 || r.height < 280) continue;
+      if (r.bottom < 80 || r.top > window.innerHeight) continue;
+      const area = r.width * r.height;
+      if (!best || area > best.area) best = { el: d, area };
+    }
+    return best ? best.el : null;
   }
 
   function focusedMedia() {
     const dialog = viewerDialog();
-    const root = dialog || document.querySelector("main") || document.body;
-    return currentDomMedia(root) || (root !== document.body ? currentDomMedia(document.body) : null);
+    if (dialog) {
+      return biggestOnScreenMedia(dialog) || currentDomMedia(dialog);
+    }
+    return (
+      biggestOnScreenMedia(document) ||
+      currentDomMedia(document.querySelector("main") || document.body) ||
+      currentDomMedia(document.body)
+    );
   }
 
   function scan() {
@@ -854,6 +902,7 @@
     } else if (focused) {
       const hit = focusedMedia();
       if (hit && hit.el) scopes.push(hit.el);
+      else scopes.push(document.querySelector("main") || document.body);
     } else {
       articleRoots().forEach((a) => scopes.push(a));
       gridCells().forEach((a) => scopes.push(a));
