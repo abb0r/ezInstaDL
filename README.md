@@ -4,13 +4,13 @@ Discreet save buttons for Instagram photos, videos, carousels, Reels, and Storie
 
 A userscript for [Violentmonkey](https://violentmonkey.github.io/), Tampermonkey, and other managers that speak the same header format.
 
-**Current version:** v0.1.1
+**Current version:** v0.1.2
 
 Repository: [github.com/abb0r/ezInstaDL](https://github.com/abb0r/ezInstaDL)
 
 ## What it does
 
-- Places a small control on each post image or video.
+- Places a small control on each post image or video, including profile grid tiles and `/p/` permalinks.
 - Single photo or video → one button.
 - Carousel → two buttons: current slide, and the whole set.
 - Reels and Stories get the same control on the media.

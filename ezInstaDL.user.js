@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.1
+// @version      0.1.2
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.1";
+  const VERSION = "0.1.2";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -407,7 +407,12 @@
   }
 
   function hrefShortcode(root) {
-    const links = root.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/reels/"]');
+    const own = (root.getAttribute && root.getAttribute("href")) || "";
+    const ownMatch = own.match(/\/(p|reel|reels)\/([^/?#]+)/);
+    if (ownMatch) return ownMatch[2];
+    const links = root.querySelectorAll
+      ? root.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/reels/"]')
+      : [];
     for (let i = 0; i < links.length; i++) {
       const href = links[i].getAttribute("href") || "";
       const m = href.match(/\/(p|reel|reels)\/([^/?#]+)/);
@@ -448,7 +453,7 @@
     if (!src || src.startsWith("data:")) return false;
     const w = img.clientWidth || 0;
     const h = img.clientHeight || 0;
-    if (w && h && (w < 140 || h < 140)) return false;
+    if (w && h && (w < 90 || h < 90)) return false;
     return true;
   }
 
@@ -468,8 +473,16 @@
       const url = v.currentSrc || v.src || (v.querySelector("source") && v.querySelector("source").src) || "";
       if (url) return { url, type: "video", el: v };
     }
-    const imgs = Array.from(root.querySelectorAll("img")).filter((img) => isMediaImg(img) && visibleBox(img));
-    if (!imgs.length) return null;
+    const imgs = Array.from(root.querySelectorAll ? root.querySelectorAll("img") : []).filter(
+      (img) => isMediaImg(img) && visibleBox(img),
+    );
+    if (!imgs.length) {
+      const tile = root.tagName === "IMG" ? root : root.querySelector && root.querySelector("img");
+      if (tile && (tile.currentSrc || tile.src) && !isAvatar(tile)) {
+        return { url: tile.currentSrc || tile.src, type: "image", el: tile };
+      }
+      return null;
+    }
     imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
     const img = imgs[0];
     return { url: img.currentSrc || img.src, type: "image", el: img };
@@ -674,6 +687,10 @@
     return /^\/(reel|reels)\//.test(location.pathname);
   }
 
+  function isPostPath() {
+    return /^\/p\//.test(location.pathname);
+  }
+
   function storyFrame() {
     const videos = Array.from(document.querySelectorAll("video")).filter(visibleBox);
     if (videos.length) return videos[0].closest("section") || videos[0].parentElement;
@@ -690,6 +707,36 @@
     const video = Array.from(main.querySelectorAll("video")).find(visibleBox);
     if (video) return video.closest("section") || video.closest("article") || main;
     return document.querySelector("article") || main;
+  }
+
+  function postFrame() {
+    const dialog = document.querySelector('div[role="dialog"]');
+    const root = dialog || document.querySelector("main") || document.body;
+    const video = Array.from(root.querySelectorAll("video")).find(visibleBox);
+    if (video) return video.closest("article") || video.closest("section") || video.parentElement;
+    const imgs = Array.from(root.querySelectorAll("img")).filter((n) => isMediaImg(n) && visibleBox(n));
+    if (imgs.length) {
+      imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
+      return imgs[0].closest("article") || imgs[0].closest("section") || imgs[0].parentElement;
+    }
+    return document.querySelector("article") || root;
+  }
+
+  function gridCells() {
+    const links = document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"]');
+    const cells = [];
+    for (let i = 0; i < links.length; i++) {
+      const a = links[i];
+      if (a.closest("article")) continue;
+      if (a.closest('div[role="dialog"]')) continue;
+      const r = a.getBoundingClientRect();
+      if (r.width < 72 || r.height < 72) continue;
+      if (r.bottom < 0 || r.top > window.innerHeight + 200) continue;
+      const img = a.querySelector("img");
+      if (!img) continue;
+      cells.push(a);
+    }
+    return cells;
   }
 
   let scheduled = false;
@@ -710,14 +757,27 @@
     } else if (isReelPath()) {
       const frame = reelFrame();
       if (frame) scopes.push(frame);
-      articleRoots().forEach((a) => scopes.push(a));
-    } else {
-      articleRoots().forEach((a) => scopes.push(a));
+    } else if (isPostPath()) {
+      const frame = postFrame();
+      if (frame) scopes.push(frame);
     }
 
-    const live = new Set();
+    articleRoots().forEach((a) => scopes.push(a));
+    gridCells().forEach((a) => scopes.push(a));
+
+    const unique = [];
+    const seen = new Set();
     for (let i = 0; i < scopes.length; i++) {
       const scope = scopes[i];
+      if (!scope || seen.has(scope)) continue;
+      seen.add(scope);
+      unique.push(scope);
+    }
+    const pruned = unique.filter((el) => !unique.some((other) => other !== el && other.contains(el)));
+
+    const live = new Set();
+    for (let i = 0; i < pruned.length; i++) {
+      const scope = pruned[i];
       if (!currentDomMedia(scope) && !lookupRecord(scope)) continue;
       live.add(scope);
       const rec = ensureOverlay(scope);
@@ -752,12 +812,12 @@
     setInterval(() => {
       if (location.pathname !== lastPath) {
         lastPath = location.pathname;
+        overlays.forEach((rec) => rec.host.remove());
+        overlays.clear();
         scanEmbeddedJson();
-        scan();
-      } else {
-        repositionAll();
       }
-    }, 500);
+      scan();
+    }, 700);
     console.info(LOG, "ready", VERSION);
   });
 })();

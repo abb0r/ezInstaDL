@@ -5,6 +5,18 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-09-06
+
+### Added
+
+- Save controls on profile grids (posts / reels / tagged tiles), not only after opening a post.
+- Save control on direct `/p/{shortcode}/` links. The media frame is found even when Instagram skips an `<article>` wrapper.
+
+### Fixed
+
+- Shortcode is read from the tile link itself, so grid items resolve the correct file.
+- Scanner now reruns on a timer so late-rendered permalink media still gets a control.
+
 ## [0.1.1] — 2026-09-06
 
 ### Fixed
