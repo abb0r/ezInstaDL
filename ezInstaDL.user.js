@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.2
+// @version      0.1.3
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.2";
+  const VERSION = "0.1.3";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -447,14 +447,25 @@
     return false;
   }
 
+  function imgUrl(img) {
+    if (!img) return "";
+    return (
+      img.currentSrc ||
+      img.src ||
+      (img.srcset && img.srcset.split(",")[0].trim().split(" ")[0]) ||
+      img.getAttribute("src") ||
+      ""
+    );
+  }
+
   function isMediaImg(img) {
     if (!img || isAvatar(img)) return false;
-    const src = img.currentSrc || img.src || "";
-    if (!src || src.startsWith("data:")) return false;
+    const src = imgUrl(img);
+    if (src.startsWith("data:")) return false;
     const w = img.clientWidth || 0;
     const h = img.clientHeight || 0;
     if (w && h && (w < 90 || h < 90)) return false;
-    return true;
+    return Boolean(src) || (w >= 160 && h >= 160);
   }
 
   function visibleBox(el) {
@@ -466,31 +477,62 @@
     return true;
   }
 
-  function currentDomMedia(root) {
-    const videos = Array.from(root.querySelectorAll("video")).filter(visibleBox);
-    if (videos.length) {
-      const v = videos[0];
+  function intersectsView(el) {
+    if (!visibleBox(el)) return false;
+    const r = el.getBoundingClientRect();
+    return r.bottom > 60 && r.top < window.innerHeight - 40 && r.right > 40 && r.left < window.innerWidth - 40;
+  }
+
+  function collectMedia(root) {
+    if (!root || !root.querySelectorAll) return [];
+    const out = [];
+    const videos = root.querySelectorAll("video");
+    for (let i = 0; i < videos.length; i++) {
+      const v = videos[i];
+      if (!visibleBox(v)) continue;
       const url = v.currentSrc || v.src || (v.querySelector("source") && v.querySelector("source").src) || "";
-      if (url) return { url, type: "video", el: v };
+      out.push({ url, type: "video", el: v, area: v.clientWidth * v.clientHeight, inView: intersectsView(v) });
     }
-    const imgs = Array.from(root.querySelectorAll ? root.querySelectorAll("img") : []).filter(
-      (img) => isMediaImg(img) && visibleBox(img),
-    );
-    if (!imgs.length) {
-      const tile = root.tagName === "IMG" ? root : root.querySelector && root.querySelector("img");
-      if (tile && (tile.currentSrc || tile.src) && !isAvatar(tile)) {
-        return { url: tile.currentSrc || tile.src, type: "image", el: tile };
+    const imgs = root.querySelectorAll("img");
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      if (!isMediaImg(img) || !visibleBox(img)) continue;
+      out.push({
+        url: imgUrl(img),
+        type: "image",
+        el: img,
+        area: img.clientWidth * img.clientHeight,
+        inView: intersectsView(img),
+      });
+    }
+    return out;
+  }
+
+  function currentDomMedia(root) {
+    const all = collectMedia(root);
+    if (!all.length) {
+      const tile = root && root.tagName === "IMG" ? root : root && root.querySelector && root.querySelector("img");
+      if (tile && imgUrl(tile) && !isAvatar(tile)) {
+        return { url: imgUrl(tile), type: "image", el: tile };
       }
       return null;
     }
-    imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
-    const img = imgs[0];
-    return { url: img.currentSrc || img.src, type: "image", el: img };
+    const visible = all.filter((m) => m.inView);
+    const pool = visible.length ? visible : all;
+    pool.sort((a, b) => b.area - a.area);
+    const best = pool[0];
+    return { url: best.url, type: best.type, el: best.el };
   }
 
   function mediaAnchor(root) {
     const hit = currentDomMedia(root);
     if (hit && hit.el) return hit.el;
+    const r = root.getBoundingClientRect();
+    if (r.height > window.innerHeight * 0.9) {
+      const any = collectMedia(document.body);
+      const vis = any.filter((m) => m.inView).sort((a, b) => b.area - a.area);
+      if (vis[0]) return vis[0].el;
+    }
     return root;
   }
 
@@ -661,14 +703,22 @@
     }
     const anchor = mediaAnchor(rec.scope);
     const r = anchor.getBoundingClientRect();
-    if (r.width < 80 || r.height < 80 || r.bottom < 40 || r.top > window.innerHeight) {
+    if (r.width < 80 || r.height < 80) {
+      rec.host.style.display = "none";
+      return;
+    }
+    const visibleTop = Math.max(r.top, 8);
+    const visibleBottom = Math.min(r.bottom, window.innerHeight - 8);
+    if (visibleBottom - visibleTop < 48) {
       rec.host.style.display = "none";
       return;
     }
     rec.host.style.display = "block";
     const width = rec.shadow.querySelector(".bar")?.getBoundingClientRect().width || 40;
-    rec.host.style.left = `${Math.round(r.right - width - 8)}px`;
-    rec.host.style.top = `${Math.round(r.bottom - 40)}px`;
+    const left = Math.min(window.innerWidth - width - 8, Math.max(8, r.right - width - 8));
+    const top = Math.max(8, visibleBottom - 40);
+    rec.host.style.left = `${Math.round(left)}px`;
+    rec.host.style.top = `${Math.round(top)}px`;
   }
 
   function repositionAll() {
@@ -712,14 +762,39 @@
   function postFrame() {
     const dialog = document.querySelector('div[role="dialog"]');
     const root = dialog || document.querySelector("main") || document.body;
-    const video = Array.from(root.querySelectorAll("video")).find(visibleBox);
-    if (video) return video.closest("article") || video.closest("section") || video.parentElement;
-    const imgs = Array.from(root.querySelectorAll("img")).filter((n) => isMediaImg(n) && visibleBox(n));
-    if (imgs.length) {
-      imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
-      return imgs[0].closest("article") || imgs[0].closest("section") || imgs[0].parentElement;
+    const hit = currentDomMedia(root);
+    if (hit && hit.el) return hit.el;
+    return null;
+  }
+
+  function ingestPageHints() {
+    const code = (location.pathname.match(/\/(p|reel|reels)\/([^/?#]+)/) || [])[2];
+    if (!code || byShortcode.has(code)) return;
+    const items = [];
+    const ogVideo = document.querySelector('meta[property="og:video"], meta[property="og:video:secure_url"]');
+    const ogImage = document.querySelector('meta[property="og:image"]');
+    if (ogVideo && ogVideo.content) items.push({ url: ogVideo.content, type: "video" });
+    if (ogImage && ogImage.content) items.push({ url: ogImage.content, type: "image" });
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (let i = 0; i < scripts.length; i++) {
+      try {
+        const data = JSON.parse(scripts[i].textContent || "");
+        const img = data.image;
+        const vid = data.video;
+        if (typeof vid === "string") items.push({ url: vid, type: "video" });
+        if (typeof img === "string") items.push({ url: img, type: "image" });
+        if (Array.isArray(img) && img[0]) items.push({ url: String(img[0]), type: "image" });
+      } catch {
+        /* ignore */
+      }
     }
-    return document.querySelector("article") || root;
+    if (!items.length) return;
+    remember({
+      id: code,
+      shortcode: code,
+      username: hrefUsername(document.body) || undefined,
+      items: items.filter((it, idx, arr) => arr.findIndex((x) => x.url === it.url) === idx),
+    });
   }
 
   function gridCells() {
@@ -760,10 +835,11 @@
     } else if (isPostPath()) {
       const frame = postFrame();
       if (frame) scopes.push(frame);
+      gridCells().forEach((a) => scopes.push(a));
+    } else {
+      articleRoots().forEach((a) => scopes.push(a));
+      gridCells().forEach((a) => scopes.push(a));
     }
-
-    articleRoots().forEach((a) => scopes.push(a));
-    gridCells().forEach((a) => scopes.push(a));
 
     const unique = [];
     const seen = new Set();
@@ -803,6 +879,7 @@
 
   ready(() => {
     scanEmbeddedJson();
+    ingestPageHints();
     scan();
     const obs = new MutationObserver(() => scheduleScan());
     obs.observe(document.documentElement, { childList: true, subtree: true });
@@ -815,6 +892,7 @@
         overlays.forEach((rec) => rec.host.remove());
         overlays.clear();
         scanEmbeddedJson();
+        ingestPageHints();
       }
       scan();
     }, 700);
