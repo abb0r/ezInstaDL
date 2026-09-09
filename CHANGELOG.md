@@ -5,6 +5,12 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] — 2026-09-10
+
+### Fixed
+
+- Saving the current carousel slide always stored the first item. Off-screen slides still had a large layout box, so the picker never moved. The control now uses the on-screen intersection of each slide, matches that URL to the cached set, and falls back to the visible `img`/`video` src if needed.
+
 ## [0.1.5] — 2026-09-06
 
 ### Fixed

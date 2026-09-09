@@ -4,7 +4,7 @@ Discreet save buttons for Instagram photos, videos, carousels, Reels, and Storie
 
 A userscript for [Violentmonkey](https://violentmonkey.github.io/), Tampermonkey, and other managers that speak the same header format.
 
-**Current version:** v0.1.5
+**Current version:** v0.1.6
 
 Repository: [github.com/abb0r/ezInstaDL](https://github.com/abb0r/ezInstaDL)
 

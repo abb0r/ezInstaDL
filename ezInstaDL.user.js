@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.5
+// @version      0.1.6
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.5";
+  const VERSION = "0.1.6";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -509,6 +509,15 @@
     return out;
   }
 
+  function visibleRect(el) {
+    const r = el.getBoundingClientRect();
+    const left = Math.max(r.left, 0);
+    const right = Math.min(r.right, window.innerWidth);
+    const top = Math.max(r.top, 0);
+    const bottom = Math.min(r.bottom, window.innerHeight);
+    return { left, right, top, bottom, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+  }
+
   function mediaFromEl(el) {
     if (!el) return null;
     if (el.tagName === "VIDEO") {
@@ -518,23 +527,28 @@
     return { url: imgUrl(el), type: "image", el };
   }
 
+  function eachMediaEl(root, fn) {
+    if (!root) return;
+    if (root.tagName === "IMG" || root.tagName === "VIDEO") fn(root);
+    if (!root.querySelectorAll) return;
+    const nodes = root.querySelectorAll("img, video");
+    for (let i = 0; i < nodes.length; i++) fn(nodes[i]);
+  }
+
   function biggestOnScreenMedia(root) {
-    const scope = root && root.querySelectorAll ? root : document;
-    const nodes = scope.querySelectorAll("img, video");
+    const scope = root && (root.querySelectorAll || root.tagName) ? root : document;
     let best = null;
-    for (let i = 0; i < nodes.length; i++) {
-      const el = nodes[i];
-      if (el.tagName === "IMG" && isAvatar(el)) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width < 180 || r.height < 180) continue;
-      if (r.bottom < 80 || r.top > window.innerHeight - 40) continue;
+    eachMediaEl(scope, (el) => {
+      if (el.tagName === "IMG" && isAvatar(el)) return;
+      const vis = visibleRect(el);
+      if (vis.width < 160 || vis.height < 160) return;
       const style = window.getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") continue;
-      const centerX = r.left + r.width / 2;
-      const bias = centerX < window.innerWidth * 0.66 ? 1.35 : 0.8;
-      const score = r.width * r.height * bias;
+      if (style.display === "none" || style.visibility === "hidden") return;
+      const centerX = vis.left + vis.width / 2;
+      const bias = centerX < window.innerWidth * 0.7 ? 1.3 : 0.75;
+      const score = vis.width * vis.height * bias;
       if (!best || score > best.score) best = { el, score };
-    }
+    });
     return best ? mediaFromEl(best.el) : null;
   }
 
@@ -578,8 +592,86 @@
   function carouselHint(root) {
     const box = hintRoot(root);
     const next = box.querySelector('[aria-label="Next"], [aria-label="Weiter"]');
-    const prev = box.querySelector('[aria-label="Go back"], [aria-label="Back"], [aria-label="Zurück"]');
+    const prev = box.querySelector('[aria-label="Go back"], [aria-label="Back"], [aria-label="Zurück"], [aria-label="Previous"]');
     return Boolean(next || prev);
+  }
+
+  function urlTokens(url) {
+    if (!url) return { file: "", core: "", cacheKey: "" };
+    const noq = url.split("?")[0];
+    const file = (noq.split("/").pop() || "").replace(/\.(jpe?g|png|webp|mp4|mov|m4v)$/i, "");
+    const core = file.replace(/_[nsep]\d*$/i, "");
+    let cacheKey = "";
+    try {
+      cacheKey = new URL(url, location.href).searchParams.get("ig_cache_key") || "";
+    } catch {
+      const m = url.match(/ig_cache_key=([^&]+)/);
+      cacheKey = m ? decodeURIComponent(m[1]) : "";
+    }
+    return { file, core, cacheKey: cacheKey.split(".")[0] };
+  }
+
+  function urlsMatch(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.split("?")[0] === b.split("?")[0]) return true;
+    const A = urlTokens(a);
+    const B = urlTokens(b);
+    if (A.cacheKey && B.cacheKey && A.cacheKey === B.cacheKey) return true;
+    if (A.core && A.core.length > 8 && A.core === B.core) return true;
+    if (A.file && A.file.length > 8 && A.file === B.file) return true;
+    return false;
+  }
+
+  function matchUrlIndex(items, url) {
+    if (!url || !items) return -1;
+    for (let i = 0; i < items.length; i++) {
+      if (urlsMatch(items[i].url, url)) return i;
+    }
+    return -1;
+  }
+
+  function indexFromDots(box, total) {
+    const rows = box.querySelectorAll("div, span");
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row.children.length < 2 || row.children.length > 20) continue;
+      if (total && row.children.length !== total) continue;
+      const kids = Array.from(row.children);
+      const widths = kids.map((k) => k.getBoundingClientRect().width);
+      if (widths.some((w) => w < 3 || w > 40)) continue;
+      let active = -1;
+      let bestW = -1;
+      for (let j = 0; j < kids.length; j++) {
+        const st = window.getComputedStyle(kids[j]);
+        const w = widths[j];
+        const op = Number(st.opacity);
+        const score = w * (op > 0.7 ? 2 : 1);
+        if (score > bestW) {
+          bestW = score;
+          active = j;
+        }
+      }
+      if (active >= 0) return active;
+    }
+    return -1;
+  }
+
+  function indexFromHiddenSlides(box, total) {
+    const slides = Array.from(box.querySelectorAll("li"));
+    if (slides.length < 2) return -1;
+    const shown = [];
+    for (let i = 0; i < slides.length; i++) {
+      if (slides[i].getAttribute("aria-hidden") === "true") continue;
+      const r = visibleRect(slides[i]);
+      if (r.width < 80) continue;
+      shown.push({ i, area: r.width * r.height });
+    }
+    if (!shown.length) return -1;
+    shown.sort((a, b) => b.area - a.area);
+    const idx = shown[0].i;
+    if (total && idx >= total) return -1;
+    return idx;
   }
 
   function currentIndex(root, total) {
@@ -597,7 +689,36 @@
       const m = label.match(/(\d+)\s*(of|von)\s*(\d+)/i);
       if (m) return Math.max(0, Math.min(total - 1, Number(m[1]) - 1));
     }
+    const hiddenIdx = indexFromHiddenSlides(box, total);
+    if (hiddenIdx >= 0) return hiddenIdx;
+    const dotIdx = indexFromDots(box, total);
+    if (dotIdx >= 0) return dotIdx;
     return 0;
+  }
+
+  function searchRoot(scope) {
+    return (
+      hintRoot(scope) ||
+      viewerDialog() ||
+      document.querySelector("article") ||
+      document.querySelector("main") ||
+      document.body
+    );
+  }
+
+  function pickCurrentItem(scope, items) {
+    const vis = biggestOnScreenMedia(searchRoot(scope)) || currentDomMedia(searchRoot(scope));
+    if (vis && vis.url && items && items.length) {
+      const matched = matchUrlIndex(items, vis.url);
+      if (matched >= 0) return { item: items[matched], idx: matched };
+      return { item: { url: vis.url, type: vis.type }, idx: -1 };
+    }
+    if (items && items.length) {
+      const idx = currentIndex(scope, items.length);
+      return { item: items[idx] || items[0], idx };
+    }
+    if (vis) return { item: vis, idx: -1 };
+    return null;
   }
 
   function lookupRecord(root) {
@@ -643,7 +764,12 @@
     toast(startLabel);
     for (let i = 0; i < list.length; i++) {
       const item = list[i];
-      const name = filenameFor(item, meta, i, list.length > 1 ? list.length : meta.totalHint || 1);
+      const name = filenameFor(
+        item,
+        meta,
+        list.length === 1 && typeof meta.nameIndex === "number" ? meta.nameIndex : i,
+        list.length > 1 ? list.length : meta.totalHint || 1,
+      );
       try {
         await downloadUrl(item.url, name);
       } catch (err) {
@@ -699,12 +825,16 @@
         btn.disabled = false;
         return;
       }
-      const idx = currentIndex(rec.scope, fresh.items.length);
-      const item = fresh.items[idx] || currentDomMedia(rec.scope) || fresh.items[0];
+      const picked = pickCurrentItem(rec.scope, fresh.items);
+      if (!picked || !picked.item || !picked.item.url) {
+        btn.disabled = false;
+        toast("Nothing to save");
+        return;
+      }
       try {
         await downloadItems(
-          [{ url: item.url, type: item.type }],
-          { ...fresh, totalHint: fresh.items.length },
+          [{ url: picked.item.url, type: picked.item.type }],
+          { ...fresh, totalHint: fresh.items.length, nameIndex: picked.idx >= 0 ? picked.idx : 0 },
           "Saving…",
         );
       } finally {
