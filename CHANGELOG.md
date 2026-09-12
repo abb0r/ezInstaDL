@@ -5,6 +5,13 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] — 2026-09-12
+
+### Fixed
+
+- Network sniffing no longer clones Instagram audio/video/DASH responses. The previous fetch/XHR wrap could intercept media segments (empty Content-Type or every `unsafeWindow.fetch` body), which is a likely cause of silent playback.
+- Saving a video no longer uses the on-page `blob:` `currentSrc`. That stream is often the muted MSE video track. Downloads prefer the progressive MP4 from `video_versions`, which includes audio.
+
 ## [0.1.6] — 2026-09-10
 
 ### Fixed

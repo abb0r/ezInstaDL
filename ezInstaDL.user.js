@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.6
+// @version      0.1.7
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.6";
+  const VERSION = "0.1.7";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -163,47 +163,73 @@
     }
   }
 
-  function hookNetwork() {
-    const rawFetch = window.fetch;
-    if (typeof rawFetch === "function") {
-      window.fetch = function () {
-        const p = rawFetch.apply(this, arguments);
-        try {
-          p.then((res) => {
-            try {
-              const ct = (res.headers && res.headers.get("content-type")) || "";
-              if (!/json|javascript|text\/plain/i.test(ct) && ct) return;
-              res.clone().text().then(ingestPayload).catch(() => {});
-            } catch {
-              /* ignore */
-            }
-          }).catch(() => {});
-        } catch {
-          /* ignore */
-        }
-        return p;
-      };
-    }
-
+  function requestUrl(input) {
+    if (!input) return "";
+    if (typeof input === "string") return input;
     try {
-      const uw = typeof unsafeWindow !== "undefined" ? unsafeWindow : null;
-      if (uw && uw.fetch && uw.fetch !== window.fetch) {
-        const raw = uw.fetch;
-        uw.fetch = function () {
-          const p = raw.apply(this, arguments);
+      if (typeof URL !== "undefined" && input instanceof URL) return input.href;
+    } catch {
+      /* ignore */
+    }
+    return input.url || "";
+  }
+
+  function looksLikeMediaRequest(url, contentType) {
+    const u = String(url || "");
+    const ct = String(contentType || "");
+    if (/video|audio|mpegurl|dash\+xml|octet-stream|mp4|webm|m4a|aac|mp2t/i.test(ct)) return true;
+    if (/\.(mp4|m4a|m4v|webm|mpd|m3u8|ts|aac)(\?|$)/i.test(u)) return true;
+    if (/(scontent|cdninstagram|fbcdn|fbcdn\.net)/i.test(u) && !/graphql|\/api\//i.test(u)) return true;
+    return false;
+  }
+
+  function looksLikeApiRequest(url, contentType) {
+    if (looksLikeMediaRequest(url, contentType)) return false;
+    const u = String(url || "");
+    const ct = String(contentType || "");
+    if (/json|javascript/i.test(ct)) return true;
+    if (/graphql|query_hash|doc_id|\/api\/v1\/|polaris|ajax\/bulk-route/i.test(u)) return true;
+    return false;
+  }
+
+  function hookFetch(target) {
+    if (!target || typeof target.fetch !== "function") return;
+    const raw = target.fetch;
+    if (raw.__ezidl) return;
+    const wrapped = function (input) {
+      const url = requestUrl(input);
+      const p = raw.apply(this, arguments);
+      if (looksLikeMediaRequest(url, "")) return p;
+      if (!looksLikeApiRequest(url, "") && url) return p;
+      try {
+        p.then((res) => {
           try {
-            p.then((res) => {
-              try {
-                res.clone().text().then(ingestPayload).catch(() => {});
-              } catch {
-                /* ignore */
-              }
-            }).catch(() => {});
+            const ct = (res.headers && res.headers.get("content-type")) || "";
+            if (looksLikeMediaRequest(res.url || url, ct)) return;
+            if (!looksLikeApiRequest(res.url || url, ct) && ct && !/json|javascript|text\/plain/i.test(ct)) return;
+            res.clone().text().then(ingestPayload).catch(() => {});
           } catch {
             /* ignore */
           }
-          return p;
-        };
+        }).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      return p;
+    };
+    wrapped.__ezidl = true;
+    try {
+      target.fetch = wrapped;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function hookNetwork() {
+    hookFetch(window);
+    try {
+      if (typeof unsafeWindow !== "undefined" && unsafeWindow && unsafeWindow !== window) {
+        hookFetch(unsafeWindow);
       }
     } catch {
       /* isolated world */
@@ -213,18 +239,29 @@
     if (RawXHR && RawXHR.prototype) {
       const rawOpen = RawXHR.prototype.open;
       const rawSend = RawXHR.prototype.send;
-      RawXHR.prototype.open = function () {
+      RawXHR.prototype.open = function (method, url) {
+        try {
+          this.__ezidlUrl = url ? String(url) : "";
+        } catch {
+          this.__ezidlUrl = "";
+        }
         return rawOpen.apply(this, arguments);
       };
       RawXHR.prototype.send = function () {
         try {
-          this.addEventListener("load", function () {
-            try {
-              ingestPayload(this.responseText);
-            } catch {
-              /* ignore */
-            }
-          });
+          const url = this.__ezidlUrl || "";
+          if (!looksLikeMediaRequest(url, "") && looksLikeApiRequest(url, "application/json")) {
+            this.addEventListener("load", function () {
+              try {
+                if (this.responseType && this.responseType !== "" && this.responseType !== "text" && this.responseType !== "json") {
+                  return;
+                }
+                ingestPayload(this.responseText);
+              } catch {
+                /* ignore */
+              }
+            });
+          }
         } catch {
           /* ignore */
         }
@@ -706,18 +743,33 @@
     );
   }
 
+  function isWeakVideoUrl(url, type) {
+    if (type && type !== "video") return false;
+    if (!url) return true;
+    if (url.startsWith("blob:") || url.startsWith("data:")) return true;
+    if (/^(mediasource|mediastream):/i.test(url)) return true;
+    return false;
+  }
+
   function pickCurrentItem(scope, items) {
     const vis = biggestOnScreenMedia(searchRoot(scope)) || currentDomMedia(searchRoot(scope));
-    if (vis && vis.url && items && items.length) {
-      const matched = matchUrlIndex(items, vis.url);
-      if (matched >= 0) return { item: items[matched], idx: matched };
-      return { item: { url: vis.url, type: vis.type }, idx: -1 };
-    }
     if (items && items.length) {
+      if (vis && vis.url) {
+        const matched = matchUrlIndex(items, vis.url);
+        if (matched >= 0) return { item: items[matched], idx: matched };
+      }
       const idx = currentIndex(scope, items.length);
-      return { item: items[idx] || items[0], idx };
+      const cached = items[idx] || items[0];
+      if (vis && isWeakVideoUrl(vis.url, vis.type) && cached) {
+        return { item: cached, idx };
+      }
+      if (cached && cached.type === "video") return { item: cached, idx };
+      if (vis && vis.url && !isWeakVideoUrl(vis.url, vis.type)) {
+        return { item: { url: vis.url, type: vis.type }, idx };
+      }
+      return { item: cached, idx };
     }
-    if (vis) return { item: vis, idx: -1 };
+    if (vis && vis.url && !isWeakVideoUrl(vis.url, vis.type)) return { item: vis, idx: -1 };
     return null;
   }
 
