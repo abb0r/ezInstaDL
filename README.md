@@ -4,7 +4,7 @@ Discreet save buttons for Instagram photos, videos, carousels, Reels, and Storie
 
 A userscript for [Violentmonkey](https://violentmonkey.github.io/), Tampermonkey, and other managers that speak the same header format.
 
-**Current version:** v0.1.7
+**Current version:** v0.1.8
 
 Repository: [github.com/abb0r/ezInstaDL](https://github.com/abb0r/ezInstaDL)
 
@@ -28,7 +28,7 @@ Updates use the `@updateURL` in the script header, pointing at the `main` branch
 
 ## Use
 
-Open the Instagram feed, a post, a Reel, or a Story. The control sits on the lower-right of the media. Click the single arrow to save the visible item. On carousels, the stacked icon saves every slide.
+Open the Instagram feed, a post, a Reel, or a Story. The control sits on the lower-left of the media so Instagram’s mute control stays free. Click the single arrow to save the visible item. On carousels, the stacked icon saves every slide.
 
 Filenames look like `username_shortcode.jpg` or `username_shortcode_02.mp4`.
 

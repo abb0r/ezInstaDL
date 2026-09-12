@@ -5,6 +5,12 @@ All notable changes to ezInstaDL are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] — 2026-09-12
+
+### Changed
+
+- Save controls sit on the **lower-left** of the media. Instagram’s mute / volume control is on the lower-right; the previous overlay sat on top of it and swallowed clicks.
+
 ## [0.1.7] — 2026-09-12
 
 ### Fixed

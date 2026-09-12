@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ezInstaDL
 // @namespace    https://github.com/abb0r/ezInstaDL
-// @version      0.1.7
+// @version      0.1.8
 // @description  Discreet save buttons for Instagram photos, videos, carousels, reels, and stories.
 // @author       abb0r
 // @homepageURL  https://github.com/abb0r/ezInstaDL
@@ -26,7 +26,7 @@
   "use strict";
 
   const NS = "ezidl";
-  const VERSION = "0.1.7";
+  const VERSION = "0.1.8";
   const LOG = "[ezInstaDL]";
 
   /** @typedef {{ url: string, type: "image" | "video", width?: number, height?: number }} MediaItem */
@@ -293,7 +293,7 @@
     .bar {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: flex-start;
       gap: 6px;
       pointer-events: auto;
     }
@@ -938,7 +938,7 @@
     }
     rec.host.style.display = "block";
     const width = rec.shadow.querySelector(".bar")?.getBoundingClientRect().width || 40;
-    const left = Math.min(window.innerWidth - width - 8, Math.max(8, r.right - width - 8));
+    const left = Math.min(window.innerWidth - width - 8, Math.max(8, r.left + 8));
     const top = Math.max(8, visibleBottom - 40);
     rec.host.style.left = `${Math.round(left)}px`;
     rec.host.style.top = `${Math.round(top)}px`;
